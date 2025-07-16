@@ -24,8 +24,8 @@ def initialise() -> Environ:
     """
     environ = Environ(
         repo = Path(os.environ.get("REPO_PATH", "")),
-        chatId = os.environ.get("TEST_CHAT_ID", ""),
-        # chatId = os.environ.get("CHAT_ID", ""),
+        # chatId = os.environ.get("TEST_CHAT_ID", ""),
+        chatId = os.environ.get("CHAT_ID", ""),
         key = os.environ.get("GREEN_API_KEY", ""),
         instanceId = os.environ.get("GREEN_API_INSTANCE_ID", ""),
         group = True
@@ -52,18 +52,14 @@ def send_message(message: str, key: str, chatId: str, instanceId: str, group: bo
     chatId = chatId + suffix
 
     payload = {
-    "chatId": chatId, 
-    "message": message, 
+        "chatId": chatId, 
+        "message": message, 
     } 
 
-    headers = {
-    'Content-Type': 'application/json'
-    }
+    headers = {'Content-Type': 'application/json'}
 
     response = requests.post(url, json=payload, headers=headers)
-
     print(response.text.encode('utf8'))
-    
     return True
 
 def send_image(image_path: Path, key: str, chatId: str, instanceId: str, group: bool) -> bool:
@@ -80,8 +76,11 @@ def send_image(image_path: Path, key: str, chatId: str, instanceId: str, group: 
         bool: Returns True if the image was sent successfully, False otherwise.
     """
     url = f"https://7105.media.greenapi.com/waInstance{instanceId}/sendFileByUpload/{key}"
+    
+    suffix = "@g.us" if group else "@c.us"
+    chatId = chatId + suffix
     payload = {
-    'chatId': chatId + ("@g.us" if group else "@c.us"),
+    'chatId': chatId,
     }
     files = [
     ('file', (image_path.stem + image_path.suffix, open(image_path,'rb'),'image/jpeg'))
@@ -93,12 +92,40 @@ def send_image(image_path: Path, key: str, chatId: str, instanceId: str, group: 
     print(response.text.encode('utf8'))
     return True
 
-def message_loop(environ: Environ, data_path: Union[Path, str]) -> None:
+
+def send_location(location: dict, chatId: str, group: bool) -> None:
+    """Send a location to a WhatsApp chat using the Green API.
+    """
+    
+    api_instance = os.environ.get("GREEN_API_INSTANCE_ID", "")
+    api_key = os.environ.get("GREEN_API_KEY", "")
+    location_url = f"https://7105.api.greenapi.com/waInstance{api_instance}/sendLocation/{api_key}"
+    
+    suffix = "@g.us" if group else "@c.us"
+    chatId = chatId + suffix
+    payload = {
+    'chatId': chatId, 
+    "nameLocation": "", 
+    "address": "", 
+    "latitude": location['latitude'], 
+    "longitude": location['longitude']
+    }
+    headers = {
+    'Content-Type': 'application/json'
+    }
+    response = requests.post(location_url, json=payload, headers=headers)
+    print(response.text.encode('utf8'))
+
+    return
+
+def message_loop(environ: Environ, data_path: Union[Path, str], wait: bool=True, wait_seconds: int=300) -> None:
     """Check message timestamps and send when due.
     
     Args:
         environ (Environ): The environment variables and paths.
         data_path (Union[Path, str], optional): The path to the JSON file containing messages.
+        wait (bool, optional): Whether to wait after processing messages. Defaults to True.
+        wait_seconds (int, optional): The number of seconds to wait if `wait` is True. Defaults to 300.
     """  
     with open(data_path, "r") as file:
         data = json.load(file)
@@ -112,20 +139,28 @@ def message_loop(environ: Environ, data_path: Union[Path, str]) -> None:
                 if msg["image"]:
                     if send_image(environ["repo"] / f'images/{msg["image"]}', environ["key"], environ["chatId"], environ["instanceId"], environ["group"]):
                         print(f"Sent image: {msg['image']}")
-                        msg["sent"] = True
-                else:
-                    msg["sent"] = True
+                        
+                if msg["location"]:
+                    print("Location data found, sending location...")
+                    send_location(msg["location"], environ["chatId"], environ["group"])
+
+
+                msg["sent"] = True
                         
                 with open(data_path, "w") as file:
                     json.dump(data, file, indent=4)
+    if wait:
+        time.sleep(wait_seconds)
+        
+        
         
 
 if __name__ == "__main__":
     
     environ = initialise()
-    data_path = environ["repo"] / "data/messages_test.json"
+    data_path = environ["repo"] / "data/messages.json"
     
     while True:
-        message_loop(environ, data_path)
-        time.sleep(300)  # Wait for 5 minutes before checking again
+        message_loop(environ, data_path, wait=True, wait_seconds=300)
+        
 

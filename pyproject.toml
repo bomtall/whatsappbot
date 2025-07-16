@@ -5,7 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "jupyter>=1.1.1",
+    "pillow>=11.3.0",
     "polars>=1.30.0",
     "python-dotenv>=1.1.0",
+    "pytz>=2025.2",
+    "qrcode>=8.2",
+    "rise>=5.7.1",
     "whatsapp-api-client-python>=0.0.49",
+    "whatsapp-chatbot-python>=0.9.6",
 ]
