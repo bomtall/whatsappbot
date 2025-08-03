@@ -8,6 +8,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
 import pytz
+import train # Import the train module to handle train information
 
 dotenv.load_dotenv()
 
@@ -21,6 +22,7 @@ def convert_to_uk_timestamp_str(timestamp_str: str):
 instance=os.environ.get("GREEN_API_INSTANCE_ID", "")
 key = os.environ.get("GREEN_API_KEY", "")
 repo_path = Path(os.environ.get("REPO_PATH", ""))
+train_token = os.environ.get("DARWIN_LITE_TOKEN", "")
 
 bot = GreenAPIBot(instance, key)
 
@@ -61,82 +63,113 @@ def send_location(details: dict, chatId: str) -> None:
     return
 
 
-@bot.router.message(text_message=["info", "Info", "information", "Information"])
-def message_handler(notification: Notification) -> None:
-    """Handle incoming text messages.
-    Args:
-        notification (Notification): The notification object containing message details.
-    """
-    notification.answer("""
-Hello! Welcome to Thomas & Daria's tenth wedding anniversay celebration group chat!!
-
-Here are some important details:
-
-- Date: Friday 20th June from 17:30 until Sunday 22nd June.
-
-- Location Holly Bush Farm, Pikehall, Matlock DE4 2PH, UK.
-
-- Accommodation is available for all guests.
-
-- Friday night takeaway, Saturday evening meal and Sunday breakfast will be provided.
-
-- Please bring your own drinks, snacks and food for other meals, basic essentials provided.
-
-- The event is BYOB (Bring Your Own Booze).
-
-- Bring your walking boots!
-
-You can also find more information in the guest list by typing 'guestlist' or 'guests' in the chat for the list of attendees or 'walk' for details about the walk on Saturday morning.
-""")
-    return
+train_stops_message = f"""
+To get train info, message train followed by the three-letter station code, e.g. 'train HDW' for Hadley Wood.
+Here are the codes for our train line:
+{'\n'.join([f"{code}: {name}" for code, name in train.our_train.stops.items()])}
+"""
     
-@bot.router.message(text_message=["guestlist", "Guestlist", "guest list", "Guest List", "guests", "Guests", "Guest list", "guest List"])
-def guest_list_message_handler(notification: Notification) -> None:
-    """Handle guest list requests.
-    Args:
-        notification (Notification): The notification object containing message details.
-    """
-    # This function will be called when a message with the text "guestlist" is received
-    with open(repo_path / "data/guest_list.json", "r") as file:
-        guest_list = json.load(file)
-    notification.answer("\n".join(guest_list["guests"]))
+@bot.router.outgoing_message(text_message=["train", "Train", "trains", "Trains"])
+def train_out_message_handler(notification: Notification) -> None:
+    notification.answer(train_stops_message)
     return
 
-    
-@bot.router.message(text_message=["Walk", "walk"])
-def walk_message_handler(notification: Notification) -> None:
-    """Handle guest list requests.
-    Args:
-        notification (Notification): The notification object containing message details.
-    """
-    notification.answer("""
-Join us for a lovely walk on Saturday morning at Dovedale!
-
-Meet us at the carpark:
-
-https://maps.app.goo.gl/gP2s2hqpVz7fNVUh9
-""")
+@bot.router.message(text_message=["train", "Train", "trains", "Trains"])
+def train_message_handler(notification: Notification) -> None:
+    notification.answer(train_stops_message)
     return
-    
-    
-# @bot.router.message(text_message=lambda msg: "where is tom" in msg.lower())
 
-@bot.router.message()
+def get_crs_code_from_message(message: str) -> str:
+    crs_code = message.strip()[-3:].upper()
+    if crs_code not in train.our_train.stops.keys():
+        raise ValueError(f"Invalid CRS code: {crs_code}. Please use a valid three-letter station code.")
+    return crs_code
+
+
+@bot.router.outgoing_message(regexp=r"(?i)train\s+[A-Za-z]{3}$", regexp_flags=re.IGNORECASE)
+def train_crs_out_message_handler(notification: Notification) -> None:
+    crs_code = get_crs_code_from_message(notification.message_text)
+    if crs_code != "HDW":
+        filter_crs = "HDW"
+    else:
+        filter_crs = None
+    info = train.get_departure_board(crs_code, train_token, 10, filter_crs=filter_crs)
+    if not info[2]:
+        notification.answer("No train information available at the moment.")
+        return
+    train_text = train.print_train_info(services=info[2], location_name=info[0], timestamp=info[1])
+    notification.answer(train_text)
+    
+    return
+
+@bot.router.message(regexp=r"(?i)^train\s+[A-Za-z]{3}$", regexp_flags=re.IGNORECASE)
+def train_crs_message_handler(notification: Notification) -> None:
+    crs_code = get_crs_code_from_message(notification.message_text)
+    if crs_code != "HDW":
+        filter_crs = "HDW"
+    else:
+        filter_crs = None
+    info = train.get_departure_board(crs_code, train_token, 10, filter_crs=filter_crs)
+    if not info[2]:
+        notification.answer("No train information available at the moment.")
+        return
+    train_text = train.print_train_info(services=info[2], location_name=info[0], timestamp=info[1])
+    notification.answer(train_text)
+    
+    return
+
+
+@bot.router.message(regexp=r"(?i)where(?:\s+is|['’‘ʼ]?s)?\s+tom")
 def where_is_tom_handler(notification: Notification) -> None:
     """Handle incoming messages asking about Tom's location.
     Args:
         notification (Notification): The notification object containing message details.
     """
-    if not notification.message_text:
-        return
-    incoming_message = notification.message_text.lower()
-    pattern =  re.compile(r"where[’'‘ʼ]s\s+tom", re.IGNORECASE)
-    if not (
-        "where is tom" in incoming_message or 
-        pattern.search(incoming_message) or
-        "where tom" in incoming_message 
-        ):
-        return
+
+    TRACCAR_USERNAME = os.environ.get("TRACCAR_USERNAME", "")
+    TRACCAR_PASSWORD = os.environ.get("TRACCAR_PASS", "")
+    TRACCAR_DEVICE_ID = os.environ.get("TRACCAR_DEVICE_ID", "")
+    #TRACCAR_URL = 'https://demo.traccar.org'
+    TRACCAR_URL = 'https://server.traccar.org'
+
+    devices_response = requests.get(
+        f'{TRACCAR_URL}/api/devices',
+        auth=HTTPBasicAuth(TRACCAR_USERNAME, TRACCAR_PASSWORD)
+    )
+
+    devices = devices_response.json()
+
+    for device in devices:
+        print(f"Device: {device['name']} - ID: {device['id']}")
+
+    device_id = devices[0]['id']
+
+    positions_response = requests.get(
+        f'{TRACCAR_URL}/api/positions',
+        auth=HTTPBasicAuth(TRACCAR_USERNAME, TRACCAR_PASSWORD)
+    )
+
+    positions = positions_response.json()
+    print(positions)
+
+    details = {}
+    for pos in positions:
+        if pos['deviceId'] == device_id:
+            details = pos
+            # print(f"Device Location: ({latitude}, {longitude}) at {timestamp}")
+            break
+    
+    # Send location to WhatsApp chat
+    chat_id = notification.chat
+    send_location(details, chat_id)
+
+
+@bot.router.outgoing_message(regexp=r"(?i)where(?:\s+is|['’‘ʼ]?s)?\s+tom")
+def where_is_tom_handler(notification: Notification) -> None:
+    """Handle incoming messages asking about Tom's location.
+    Args:
+        notification (Notification): The notification object containing message details.
+    """
 
     TRACCAR_USERNAME = os.environ.get("TRACCAR_USERNAME", "")
     TRACCAR_PASSWORD = os.environ.get("TRACCAR_PASS", "")
