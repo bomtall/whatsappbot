@@ -27,11 +27,9 @@ train_token = os.environ.get("DARWIN_LITE_TOKEN", "")
 bot = GreenAPIBot(instance, key)
 
 
-
 def send_location(details: dict, chatId: str) -> None:
     """Send a location to a WhatsApp chat using the Green API.
     """
-    
     api_instance = os.environ.get("GREEN_API_INSTANCE_ID", "")
     api_key = os.environ.get("GREEN_API_KEY", "")
     location_url = f"https://7105.api.greenapi.com/waInstance{api_instance}/sendLocation/{api_key}"

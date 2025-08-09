@@ -26,6 +26,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 images/
+data/guest_list.json
+data/messages_test.json
+data/messages.json
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
