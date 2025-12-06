@@ -141,6 +141,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Locations
+geometry/
+
 # Spyder project settings
 .spyderproject
 .spyproject
